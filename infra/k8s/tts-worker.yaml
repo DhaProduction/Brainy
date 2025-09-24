@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brainy-tts
+  labels:
+    app: brainy-tts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: brainy-tts
+  template:
+    metadata:
+      labels:
+        app: brainy-tts
+    spec:
+      nodeSelector:
+        accelerator: nvidia
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: chatterbox
+          image: ghcr.io/acme/chatterbox-self-hosted:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MODEL_PATH
+              value: /models/chatterbox
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: "8Gi"
+              cpu: "2000m"
+            requests:
+              nvidia.com/gpu: 1
+              memory: "6Gi"
+              cpu: "1500m"
+          volumeMounts:
+            - name: model-volume
+              mountPath: /models
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: brainy-tts-models
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: brainy-tts-models
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: brainy-tts
+spec:
+  selector:
+    app: brainy-tts
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: brainy-tts
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: brainy-tts
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
