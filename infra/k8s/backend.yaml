@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brainy-backend-config
+  labels:
+    app: brainy-backend
+data:
+  NODE_ENV: production
+  REDIS_URL: redis://brainy-redis:6379
+  POSTGRES_URL: postgres://postgres:postgres@brainy-postgres:5432/brainy
+  CHATTERBOX_URL: http://brainy-tts:8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brainy-backend
+  labels:
+    app: brainy-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: brainy-backend
+  template:
+    metadata:
+      labels:
+        app: brainy-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/acme/brainy-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: brainy-backend-config
+            - secretRef:
+                name: brainy-secrets
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: brainy-backend
+spec:
+  selector:
+    app: brainy-backend
+  ports:
+    - port: 80
+      targetPort: 4000
+      name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: brainy-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: brainy-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 55

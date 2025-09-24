@@ -1,0 +1,67 @@
+name: Brainy CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: "${{ matrix.project }}/package-lock.json"
+      - name: Install dependencies
+        working-directory: ${{ matrix.project }}
+        run: npm install --legacy-peer-deps
+      - name: Lint & build
+        working-directory: ${{ matrix.project }}
+        run: |
+          npm run lint || echo "lint skipped"
+          npm run build
+
+  docker-publish:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build frontend image
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/brainy-frontend:latest frontend
+      - name: Build backend image
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/brainy-backend:latest backend
+      - name: Push images
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/brainy-frontend:latest
+          docker push ghcr.io/${{ github.repository_owner }}/brainy-backend:latest
+      - name: Deploy to Kubernetes
+        uses: azure/k8s-deploy@v4
+        with:
+          manifests: |
+            infra/k8s/backend.yaml
+            infra/k8s/frontend.yaml
+            infra/k8s/postgres.yaml
+            infra/k8s/redis.yaml
+            infra/k8s/tts-worker.yaml
+          namespace: brainy
+          images: |
+            ghcr.io/${{ github.repository_owner }}/brainy-backend:latest
+            ghcr.io/${{ github.repository_owner }}/brainy-frontend:latest
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}

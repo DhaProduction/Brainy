@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-950 text-white;
+}
+
+a {
+  @apply text-primary;
+}
+
+button {
+  @apply rounded-md bg-primary px-4 py-2 font-semibold text-white transition hover:bg-purple-700;
+}
